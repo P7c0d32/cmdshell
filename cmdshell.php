@@ -28,14 +28,14 @@
     /**
      * 获取php.ini中被禁用的函数名
      * @param bool $display 是否显示disable_functions
-     * @return false|string[]|void
+     * @return array disable_functions
      */
     function get_disable($display=false) {
         $func = ini_get('disable_functions');
         echo (function_exists('pcntl_exec') ? 'pcntl_exec is available' : 'pcntl_exec is unavailable') . LINE;
 
         if (!$func && $display) {
-                echo 'No disabled function found ! ' . LINE . LINE;
+            echo 'No disabled function found ! ' . LINE . LINE;
             return array();
         }
 
@@ -45,6 +45,7 @@
             foreach ($func as $fun) {
                 echo $fun . " ";
             }
+            echo LINE . LINE;
         }
         return $func;
     }
