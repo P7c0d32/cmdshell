@@ -32,10 +32,10 @@
      */
     function get_disable($display=false) {
         $func = ini_get('disable_functions');
-        echo (function_exists('pcntl_exec') ? 'pcntl_exec is available' : 'pcntl_exec is unavailable') . LINE;
-
         $func = $func ? explode(',',$func) : array();
+
         if ($display) {
+            echo (function_exists('pcntl_exec') ? 'pcntl_exec is available' : 'pcntl_exec is unavailable') . LINE;
             echo 'disable_functions: ';
             foreach ($func as $fun) {
                 echo $fun . " ";
