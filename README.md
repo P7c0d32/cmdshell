@@ -6,3 +6,4 @@ Escape the disable_functions to execute the command (Dev)
 
 ## TODO
 + Add LD_PRELOAD method
++ POST parameters encode or encrypt (Base64 AES)
